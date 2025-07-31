@@ -13,6 +13,17 @@ def count_tokens(content: str, model: str = "gpt-3.5-turbo") -> int:
     2) Otherwise, try to use `tiktoken`. If tiktoken raises KeyError
        (unrecognized model name), fallback to Hugging Face tokenizer.
     """
+    if model.startswith("ep-"):
+        try:
+            import tiktoken
+        except ImportError as e:
+            raise ImportError("`tiktoken` package not found, please run `pip install tiktoken`") from e
+        
+        # Use cl100k_base as approximation for VolcArk models
+        if "cl100k_base" not in _tiktoken_encoders:
+            _tiktoken_encoders["cl100k_base"] = tiktoken.get_encoding("cl100k_base")
+        return len(_tiktoken_encoders["cl100k_base"].encode(content, allowed_special="all"))
+    
     if model.startswith("voyage"):
         if model not in _voyage_clients:
             # Lazy-import VoyageAI & create a client

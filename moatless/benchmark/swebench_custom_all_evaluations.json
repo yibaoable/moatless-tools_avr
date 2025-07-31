@@ -1,0 +1,47 @@
+[  
+    {
+        "instance_id": "django__django-custom1",
+        "repo": "django/django",
+        "base_commit": "32ebcbf2",
+        "problem_statement": "The vulnerability arises because the `fields` input, which controls the `SELECT` clause fields, is not properly validated or sanitized. Untrusted values in `fields` are directly used to build `field_names`, which are then embedded into the SQL query. This allows an attacker to inject arbitrary SQL code, leading to unauthorized data access, modification, or other malicious database operations. Proper validation (e.g., ensuring `f` matches a predefined list of safe field names) or sanitization (e.g., escaping SQL metacharacters) is required to mitigate this risk.",
+        "golden_patch": "diff --git a/django/db/models/sql/query.py b/django/db/models/sql/query.py\nindex 277e8a18ca49..fe6baca607a9 100644\n--- a/django/db/models/sql/query.py\n+++ b/django/db/models/sql/query.py\n@@ -2446,6 +2446,8 @@ def set_values(self, fields):\n         self.has_select_fields = True\n \n         if fields:\n+            for field in fields:\n+                self.check_alias(field)\n             field_names = []\n             extra_names = []\n             annotation_names = []",
+        "test_patch": "diff --git a/tests/expressions/test_queryset_values.py b/tests/expressions/test_queryset_values.py\nindex 80addef37be2..47bd1358de54 100644\n--- a/tests/expressions/test_queryset_values.py\n+++ b/tests/expressions/test_queryset_values.py\n@@ -1,7 +1,7 @@\n from django.db.models import F, Sum\n-from django.test import TestCase\n+from django.test import TestCase, skipUnlessDBFeature\n \n-from .models import Company, Employee\n+from .models import Company, Employee, JSONFieldModel\n \n \n class ValuesExpressionsTests(TestCase):\n@@ -43,6 +43,19 @@ def test_values_expression_alias_sql_injection(self):\n         with self.assertRaisesMessage(ValueError, msg):\n             Company.objects.values(**{crafted_alias: F(\"ceo__salary\")})\n \n+    @skipUnlessDBFeature(\"supports_json_field\")\n+    def test_values_expression_alias_sql_injection_json_field(self):\n+        crafted_alias = \"\"\"injected_name\" from \"expressions_company\"; --\"\"\"\n+        msg = (\n+            \"Column aliases cannot contain whitespace characters, quotation marks, \"\n+            \"semicolons, or SQL comments.\"\n+        )\n+        with self.assertRaisesMessage(ValueError, msg):\n+            JSONFieldModel.objects.values(f\"data__{crafted_alias}\")\n+\n+        with self.assertRaisesMessage(ValueError, msg):\n+            JSONFieldModel.objects.values_list(f\"data__{crafted_alias}\")\n+\n     def test_values_expression_group_by(self):\n         # values() applies annotate() first, so values selected are grouped by\n         # id, not firstname.",
+        "fail_to_pass": "[\"test_queryset_values.py::ValuesExpressionsTests::test_values_expression_alias_sql_injection_json_field\"",
+        "pass_to_pass": "[\"test_queryset_values.py::ValuesExpressionsTests::test_values_expression_group_by\"",
+        "expected_spans": {
+          "django/db/models/sql/query.py": [
+            "Query.set_values"
+          ]
+        },
+        "test_file_spans": {
+          "test_queryset_values.py": [
+            "imports",
+            "ValuesExpressionsTests.test_values_expression_alias_sql_injection_json_field"
+          ]
+        },
+        "resolved_by": [],
+        "alternative_spans": [],
+        "version": "3.0"
+      },
+        {
+        "instance_id": "gogs__gogs-custom3",
+        "repo": "gogs/gogs",
+        "base_commit": "38aff73",
+        "problem_statement": "The vulnerability arises because the `fields` input, which controls the `SELECT` clause fields, is not properly validated or sanitized. Untrusted values in `fields` are directly used to build `field_names`, which are then embedded into the SQL query. This allows an attacker to inject arbitrary SQL code, leading to unauthorized data access, modification, or other malicious database operations. Proper validation (e.g., ensuring `f` matches a predefined list of safe field names) or sanitization (e.g., escaping SQL metacharacters) is required to mitigate this risk.",
+        "golden_patch": "diff --git a/internal/db/repo_editor.go b/internal/db/repo_editor.go\nindex 9d4664be9d9..98065d4399b 100644\n--- a/internal/db/repo_editor.go\n+++ b/internal/db/repo_editor.go\n@@ -467,10 +467,12 @@ type UploadRepoFileOptions struct {\n // path of the repository.\n func isRepositoryGitPath(path string) bool {\n \treturn strings.HasSuffix(path, \".git\") ||\n-\t\tstrings.Contains(path, \".git\"+string(os.PathSeparator)) ||\n+\t\tstrings.Contains(path, \".git/\") ||\n+\t\tstrings.Contains(path, `.git\\\\`) ||\n \t\t// Windows treats \".git.\" the same as \".git\"\n \t\tstrings.HasSuffix(path, \".git.\") ||\n-\t\tstrings.Contains(path, \".git.\"+string(os.PathSeparator))\n+\t\tstrings.Contains(path, \".git./\") ||\n+\t\tstrings.Contains(path, `.git.\\\\`)\n }\n \n func (repo *Repository) UploadRepoFiles(doer *User, opts UploadRepoFileOptions) error {",
+        "test_patch": "diff --git a/internal/db/repo_editor_test.go b/internal/db/repo_editor_test.go\nindex ea2bf7a92db..6aeed011aa1 100644\n--- a/internal/db/repo_editor_test.go\n+++ b/internal/db/repo_editor_test.go\n@@ -5,7 +5,6 @@\n package db\n\n import (\n-\t\"path/filepath\"\n \t\"testing\"\n\n \t\"github.com/stretchr/testify/assert\"\n@@ -16,23 +15,37 @@ func Test_isRepositoryGitPath(t *testing.T) {\n \t\tpath    string\n \t\twantVal bool\n \t}{\n-\t\t{path: filepath.Join(\".\", \".git\"), wantVal: true},\n-\t\t{path: filepath.Join(\".\", \".git\", \"\"), wantVal: true},\n-\t\t{path: filepath.Join(\".\", \".git\", \"hooks\", \"pre-commit\"), wantVal: true},\n-\t\t{path: filepath.Join(\".git\", \"hooks\"), wantVal: true},\n-\t\t{path: filepath.Join(\"dir\", \".git\"), wantVal: true},\n-\n-\t\t{path: filepath.Join(\".\", \".git.\"), wantVal: true},\n-\t\t{path: filepath.Join(\".\", \".git.\", \"\"), wantVal: true},\n-\t\t{path: filepath.Join(\".\", \".git.\", \"hooks\", \"pre-commit\"), wantVal: true},\n-\t\t{path: filepath.Join(\".git.\", \"hooks\"), wantVal: true},\n-\t\t{path: filepath.Join(\"dir\", \".git.\"), wantVal: true},\n-\n-\t\t{path: filepath.Join(\".gitignore\"), wantVal: false},\n-\t\t{path: filepath.Join(\"dir\", \".gitkeep\"), wantVal: false},\n+\t\t{path: \".git\", wantVal: true},\n+\t\t{path: \"./.git\", wantVal: true},\n+\t\t{path: \".git/hooks/pre-commit\", wantVal: true},\n+\t\t{path: \".git/hooks\", wantVal: true},\n+\t\t{path: \"dir/.git\", wantVal: true},\n+\n+\t\t{path: \".gitignore\", wantVal: false},\n+\t\t{path: \"dir/.gitkeep\", wantVal: false},\n+\n+\t\t// Windows-specific\n+\t\t{path: `.git\\\\`, wantVal: true},\n+\t\t{path: `.git\\\\hooks\\\\pre-commit`, wantVal: true},\n+\t\t{path: `.git\\\\hooks`, wantVal: true},\n+\t\t{path: `dir\\\\.git`, wantVal: true},\n+\n+\t\t{path: `\\.git.`, wantVal: true},\n+\t\t{path: `\\.git.\\\\`, wantVal: true},\n+\t\t{path: `.git.\\\\hooks\\\\pre-commit`, wantVal: true},\n+\t\t{path: `.git.\\\\hooks`, wantVal: true},\n+\t\t{path: `dir\\\\.git.`, wantVal: true},\n+\n+\t\t{path: \"./.git.\", wantVal: true},\n+\t\t{path: \"./.git./\", wantVal: true},\n+\t\t{path: \".git./hooks/pre-commit\", wantVal: true},\n+\t\t{path: \".git./hooks\", wantVal: true},\n+\t\t{path: \"dir/.git.\", wantVal: true},\n+\n+\t\t{path: `dir\\\\.gitkeep`, wantVal: false},\n \t}\n \tfor _, test := range tests {\n-\t\tt.Run(\"\", func(t *testing.T) {\n+\t\tt.Run(test.path, func(t *testing.T) {\n \t\t\tassert.Equal(t, test.wantVal, isRepositoryGitPath(test.path))\n \t\t})\n \t}",
+        
+        "fail_to_pass": "[\"test_queryset_values.py::ValuesExpressionsTests::test_values_expression_alias_sql_injection_json_field\"",
+        "pass_to_pass": "[\"test_queryset_values.py::ValuesExpressionsTests::test_values_expression_group_by\"",
+
+        "test_file_spans": {
+          "test_queryset_values.py": [
+            "imports",
+            "ValuesExpressionsTests.test_values_expression_alias_sql_injection_json_field"
+          ]
+        },
+        "resolved_by": [],
+        "alternative_spans": [],
+        "version": "0.13.0"
+      }
+]

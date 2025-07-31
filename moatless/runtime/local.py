@@ -8,7 +8,7 @@ from typing import Tuple
 
 from swebench.harness.constants import SWEbenchInstance, NON_TEST_EXTS
 from swebench.harness.grading import get_eval_report
-from swebench.harness.test_spec.test_spec import make_test_spec, MAP_REPO_VERSION_TO_SPECS
+from swebench.harness.test_spec.test_spec import make_test_spec, MAP_REPO_VERSION_TO_SPECS,TestSpec
 
 from moatless.environment.base import BaseEnvironment, EnvironmentExecutionError
 from moatless.exceptions import RuntimeError
@@ -42,7 +42,34 @@ class SweBenchLocalEnvironment(RuntimeEnvironment, BaseEnvironment):
         self.swebench_instance = swebench_instance
         self.instance_id = swebench_instance["instance_id"]
         self.storage = storage
-        self.test_spec = make_test_spec(self.swebench_instance)
+        # self.test_spec = make_test_spec(self.swebench_instance)
+        import json
+        def _from_json_or_obj(key: str):
+            """If key points to string, load with json"""
+            if key not in swebench_instance:
+                # If P2P, F2P keys not found, it's a validation instance
+                return []
+            if isinstance(swebench_instance[key], str):
+                return json.loads(swebench_instance[key])
+            return swebench_instance[key]
+        self.test_spec = TestSpec(
+            instance_id=swebench_instance["instance_id"], 
+            repo=swebench_instance["repo"],
+            env_script_list=[],  # 必需但留空
+            repo_script_list=[],  # 必需但留空
+            eval_script_list=[],  # 必需但留空
+            version=swebench_instance.get("version"),  # 可选
+            arch="x86_64",  # 默认x86
+            FAIL_TO_PASS=_from_json_or_obj("FAIL_TO_PASS"),
+            PASS_TO_PASS=_from_json_or_obj("PASS_TO_PASS"),
+            language="python",  # 根据repo设置（如django→python）
+            docker_specs={},  # 留空
+            namespace=None,  # 可选
+            base_image_tag="latest",  # 默认
+            env_image_tag="latest",  # 默认
+            instance_image_tag="latest",  # 默认
+        )
+
         self._install_task = None  # Will hold the installation process task
         self._skip_conda_activate = os.getenv("SKIP_CONDA_ACTIVATE", "false").lower() == "true"
         logger.info(f"SKIP_CONDA_ACTIVATE: {self._skip_conda_activate}")
@@ -50,15 +77,16 @@ class SweBenchLocalEnvironment(RuntimeEnvironment, BaseEnvironment):
         specs = MAP_REPO_VERSION_TO_SPECS.get(self.swebench_instance["repo"], {}).get(
             self.swebench_instance["version"], {}
         )
+        if(specs!= None):
 
-        self._install_command = specs.get("install")
+            self._install_command = specs.get("install")
 
-        if self.swebench_instance["repo"] == "sphinx-doc/sphinx":
-            self._install_after_patch = True
-        else:
-            self._install_after_patch = False
+            if self.swebench_instance["repo"] == "sphinx-doc/sphinx":
+                self._install_after_patch = True
+            else:
+                self._install_after_patch = False
 
-        self._install_task = asyncio.create_task(self._run_async_installation(self._install_command))
+            self._install_task = asyncio.create_task(self._run_async_installation(self._install_command))
 
     async def execute(self, command: str, fail_on_error: bool = False, patch: str | None = None, timeout: int = 600) -> str:
         """Execute a command in the environment."""
@@ -497,6 +525,8 @@ class SweBenchLocalEnvironment(RuntimeEnvironment, BaseEnvironment):
             .get(self.swebench_instance["version"], {})
             .get("test_cmd", "")
         )
+        repo_name = self.swebench_instance["repo"].split("/")[1]
+        test_cmd = f'env PYTHONPATH="/workspace/{repo_name}:$PYTHONPATH" {test_cmd}'
         return " ".join([test_cmd, *directives])
 
     async def reset_modified_files(self, patch: str):
@@ -555,7 +585,8 @@ class SweBenchLocalEnvironment(RuntimeEnvironment, BaseEnvironment):
 
         test_patch = self.swebench_instance["test_patch"]
         base_commit = self.swebench_instance["base_commit"]
-        repo_directory = "/testbed"
+        repo_name = self.swebench_instance["repo"].split("/")[1]
+        repo_directory = f"/workspace/{repo_name}"
 
         HEREDOC_DELIMITER = "EOF_114329324912"
         test_files = get_modified_files(test_patch)

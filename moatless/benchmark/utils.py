@@ -25,8 +25,9 @@ def load_moatless_datasets(split: str | None = None):
     if split:
         _load_moatless_dataset(split)
     else:
-        _load_moatless_dataset("lite")
-        _load_moatless_dataset("verified")
+        # _load_moatless_dataset("lite")
+        # _load_moatless_dataset("verified")
+        _load_moatless_dataset("custom")
 
 
 def _load_moatless_dataset(split: str):

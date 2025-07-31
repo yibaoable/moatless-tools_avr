@@ -61,7 +61,7 @@ class ReActCompletionModel(JsonCompletionModel):
 
         system_prompt += dedent(f"""\n# Response format
 
-Use the following format:
+Use the following format in each round of interaction:
 {'' if not self.disable_thoughts else '''
 Thoughts: You should always think about what to do'''}
 Action: The action to take followed by the input arguments based on the schema below
@@ -114,10 +114,12 @@ Important: You can include multiple Action blocks to perform sequential actions.
 
         try:
             response_text = completion_response.choices[0].message.content
+            print(f"【DEBUG】ReAct response: {response_text}")
             self._validate_react_format(response_text)
 
             # Get all action blocks
             thought, action_blocks = self._extract_action_blocks(response_text)
+            print(f"【DEBUG】Action_block: {action_blocks}")
             validated_actions: list[ResponseSchema] = []
 
             # Limit the number of actions to the max_actions value
@@ -187,17 +189,21 @@ Important: You can include multiple Action blocks to perform sequential actions.
         Raises:
             ValueError: If format is invalid
         """
+        # print(response_text)
         lines = [line.strip() for line in response_text.split("\n") if line.strip()]
 
         action_count = sum(1 for line in lines if line.lower().startswith("action:"))
 
-        if action_count < 1:
-            raise CompletionRetryError("Response must have one 'Action:' section")
+        # if action_count < 1:
+        #     raise CompletionRetryError("Response must have one 'Action:' section")
 
         if not self.disable_thoughts:
             thought_line = next(
                 (i for i, line in enumerate(lines) if line.lower().startswith(("thought:", "thoughts:"))), -1
             )
+
+            if( thought_line == -1 and action_count < 1):
+                raise CompletionRetryError("The response is incorrect, it should start with 'Thoughts:,and must have one 'Action:' section")
 
             if thought_line == -1:
                 raise CompletionRetryError("The response is incorrect, it should start with 'Thoughts:'")

@@ -577,6 +577,10 @@ class SchedulerRunner(BaseRunner):
 
             if sync_count > 0:
                 self.logger.debug(f"Successfully synced {sync_count}/{len(active_jobs)} jobs with runner")
+            all_terminal = all(job.status in [JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELED, JobStatus.STOPPED] for job in all_jobs)
+            if all_terminal:
+                self.stop_scheduler()
+        
         except Exception as e:
             self.logger.exception(f"Error syncing jobs with runner: {e}")
 
@@ -593,8 +597,11 @@ class SchedulerRunner(BaseRunner):
             
         try:
             job_status = await self.runner.get_job_status(job.project_id, job.trajectory_id)
+            logger.info(f"===========Syncing job {job.id} with status {job_status}===========")
 
+            logger.info(f"===========Now {job.id} with status {job.status}===========")
             if job_status is None:
+                
                 if job.status == JobStatus.RUNNING:
                     self.logger.warning(
                         f"Job {job.id} is marked as RUNNING but doesn't exist in runner, marking as STOPPED"
@@ -640,6 +647,7 @@ class SchedulerRunner(BaseRunner):
                     # For failed jobs, keep them in Kubernetes and storage for manual inspection
                     # Only delete them when explicitly canceled through the API
                     elif job_status == JobStatus.FAILED:
+                        print(f"==========Job {job.id} failed ==========")
                         self.logger.info(
                             f"Job {job.id} failed, keeping in Kubernetes for manual inspection. Use the cancel API to delete it."
                         )
@@ -650,7 +658,11 @@ class SchedulerRunner(BaseRunner):
                             job.metadata["error"] = "Job failed in the underlying runner"
                         # Don't delete failed jobs automatically - let them be manually inspected and canceled
 
-                await self.storage.update_job(job)
+                try:
+                    await self.storage.update_job(job)
+                    self.logger.info(f"Successfully updated job {job.id} status to {job_status} in storage")
+                except Exception as e:
+                    self.logger.error(f"Failed to update job {job.id} status to {job_status} in storage: {e}")
                 
         except Exception as e:
             self.logger.exception(f"Error syncing job {job.id}: {e}")

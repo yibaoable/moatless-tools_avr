@@ -219,7 +219,7 @@ def main():
             model_id=model_id,
             litellm_model_name=litellm_model_name,
             flow_id=args.flow,
-            use_local_source=False,  # This parameter doesn't exist in the current script
+            use_local_source=True,  # This parameter doesn't exist in the current script
             num_parallel_jobs=args.num_parallel_jobs,
         )
     )

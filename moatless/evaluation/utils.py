@@ -26,7 +26,7 @@ def load_moatless_datasets(split: str | None = None):
     global _moatless_instances
 
     # Path to the dataset index file
-    index_path = os.path.join(os.path.dirname(__file__), "datasets", "dataset_index.json")
+    index_path = os.path.join(os.path.dirname(__file__), "datasets", "avr_dataset_index.json")
 
     try:
         if os.path.exists(index_path):
@@ -61,8 +61,9 @@ def _load_legacy_datasets(split: str | None = None):
     if split:
         _load_moatless_dataset(split)
     else:
-        _load_moatless_dataset("lite")
-        _load_moatless_dataset("verified")
+        # _load_moatless_dataset("lite")
+        # _load_moatless_dataset("verified")
+        _load_moatless_dataset("custom")
 
     logger.info(f"Loaded {len(_moatless_instances)} instances using legacy method")
 

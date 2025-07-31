@@ -1,0 +1,56 @@
+{
+  "instances": [
+    {
+      "instance_id": "cve-2024-42005",
+      "repo": "django/django",
+      "base_commit": "32ebcbf2",
+      "problem_statement": "The vulnerability arises because the `fields` input, which controls the `SELECT` clause fields, is not properly validated or sanitized. Untrusted values in `fields` are directly used to build `field_names`, which are then embedded into the SQL query. This allows an attacker to inject arbitrary SQL code, leading to unauthorized data access, modification, or other malicious database operations. Proper validation (e.g., ensuring `f` matches a predefined list of safe field names) or sanitization (e.g., escaping SQL metacharacters) is required to mitigate this risk.",
+      "resolved_count": 0,
+      "file_count": 1,
+      "datasets": [
+        {
+          "dataset": "AVR_bench_custom",
+          "split": "test"
+        }
+      ],
+      "expected_spans": {
+        "django/db/models/sql/query.py": [
+          "Query.set_values"
+        ]
+      },
+      "test_file_spans": {
+        "test_queryset_values.py": [
+          "imports",
+          "ValuesExpressionsTests.test_values_expression_alias_sql_injection_json_field"
+        ]
+      },
+      "resolved_by": []
+    },
+    {
+      "instance_id": "cve-2021-31542",
+      "repo": "django/django",
+      "base_commit": "04ac1624bdc2fa",
+      "problem_statement": "The code suffers from a Path Traversal (CWE-22) vulnerability because it fails to sanitize or validate the `name` input for directory traversal sequences. By allowing `dir_name` to retain unsanitized path components (e.g., `../`), the code constructs paths that resolve outside the intended storage directory when generating new filenames. This enables attackers to write files to arbitrary locations on the filesystem, leading to unauthorized data access, modification, or system compromise. Proper input validation (e.g., normalizing the path to ensure it stays within a predefined base directory) is required to mitigate this vulnerability.",
+      "resolved_count": 0,
+      "file_count": 1,
+      "datasets": [
+        {
+          "dataset": "AVR_bench_custom",
+          "split": "test"
+        }
+      ],
+      "expected_spans": {
+        "django/core/files/storage.py": [
+          "Storage.get_available_name"
+        ]
+      },
+      "test_file_spans": {
+        "test_generate_filename.py": [
+          "imports",
+          "GenerateFilenameStorageTests.test_storage_dangerous_paths"
+        ]
+      },
+      "resolved_by": []
+    }
+  ]
+}

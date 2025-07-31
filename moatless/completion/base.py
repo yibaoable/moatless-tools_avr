@@ -104,7 +104,7 @@ class BaseCompletionModel(MoatlessComponent, ABC):
         description="Use prompt caching to cache the message history if the LLM supports it",
     )
     thoughts_in_action: bool = Field(
-        default=False,
+        default=True,
         description="Whether to include thoughts in the action or in the message",
     )
     disable_thoughts: bool = Field(

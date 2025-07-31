@@ -1,0 +1,8 @@
+{
+  "name": "avr_bench",
+  "description": "instances of AVR-Bench",
+  "instance_ids": [
+    "cve-2021-31542",
+    "cve-2024-42005"
+  ]
+}

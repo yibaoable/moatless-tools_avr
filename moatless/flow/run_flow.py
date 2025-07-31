@@ -80,9 +80,11 @@ async def setup_swebench_runtime() -> RuntimeEnvironment:
     with open(instance_path) as f:
         swebench_instance = json.loads(f.read())
 
+    repo_name = swebench_instance["repo"].split("/")[-1]
     try:
         return SweBenchLocalEnvironment(
-            repo_path=Path("/testbed"),
+            # repo_path=Path(f"/opt/moatless/moatless/repos/{repo_name}"),
+            repo_path=Path(f"/workspace/{repo_name}"),
             swebench_instance=swebench_instance,
             storage=storage,
         )

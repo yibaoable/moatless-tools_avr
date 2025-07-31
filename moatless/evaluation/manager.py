@@ -133,7 +133,7 @@ class EvaluationManager:
         swebench_instance = get_swebench_instance(instance_id=instance.instance_id)
         repo_name = swebench_instance["repo"].split("/")[-1]
         problem_statement = (
-            f"You're tasks is to solve an issue reported in the project {repo_name}. The repository is cloned in the directory /testbed which is the current working directory. "
+            f"You're tasks is to solve an issue reported in the project {repo_name}. The repository is cloned in the directory /workspace/{repo_name} which is the current working directory. "
             f"The reported issue is:\n{swebench_instance['problem_statement']}"
         )
 

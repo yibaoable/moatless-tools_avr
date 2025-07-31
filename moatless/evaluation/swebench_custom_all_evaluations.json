@@ -1,0 +1,51 @@
+[  
+  {
+      "instance_id": "cve-2024-42005",
+      "repo": "django/django",
+      "base_commit": "32ebcbf2",
+      "problem_statement": "The vulnerability arises because the `fields` input, which controls the `SELECT` clause fields, is not properly validated or sanitized. Untrusted values in `fields` are directly used to build `field_names`, which are then embedded into the SQL query. This allows an attacker to inject arbitrary SQL code, leading to unauthorized data access, modification, or other malicious database operations. Proper validation (e.g., ensuring `f` matches a predefined list of safe field names) or sanitization (e.g., escaping SQL metacharacters) is required to mitigate this risk.",
+      "golden_patch": "diff --git a/django/db/models/sql/query.py b/django/db/models/sql/query.py\nindex 277e8a18ca49..fe6baca607a9 100644\n--- a/django/db/models/sql/query.py\n+++ b/django/db/models/sql/query.py\n@@ -2446,6 +2446,8 @@ def set_values(self, fields):\n         self.has_select_fields = True\n \n         if fields:\n+            for field in fields:\n+                self.check_alias(field)\n             field_names = []\n             extra_names = []\n             annotation_names = []",
+      "test_patch": "diff --git a/tests/expressions/test_queryset_values.py b/tests/expressions/test_queryset_values.py\nindex 80addef37be2..47bd1358de54 100644\n--- a/tests/expressions/test_queryset_values.py\n+++ b/tests/expressions/test_queryset_values.py\n@@ -1,7 +1,7 @@\n from django.db.models import F, Sum\n-from django.test import TestCase\n+from django.test import TestCase, skipUnlessDBFeature\n \n-from .models import Company, Employee\n+from .models import Company, Employee, JSONFieldModel\n \n \n class ValuesExpressionsTests(TestCase):\n@@ -43,6 +43,19 @@ def test_values_expression_alias_sql_injection(self):\n         with self.assertRaisesMessage(ValueError, msg):\n             Company.objects.values(**{crafted_alias: F(\"ceo__salary\")})\n \n+    @skipUnlessDBFeature(\"supports_json_field\")\n+    def test_values_expression_alias_sql_injection_json_field(self):\n+        crafted_alias = \"\"\"injected_name\" from \"expressions_company\"; --\"\"\"\n+        msg = (\n+            \"Column aliases cannot contain whitespace characters, quotation marks, \"\n+            \"semicolons, or SQL comments.\"\n+        )\n+        with self.assertRaisesMessage(ValueError, msg):\n+            JSONFieldModel.objects.values(f\"data__{crafted_alias}\")\n+\n+        with self.assertRaisesMessage(ValueError, msg):\n+            JSONFieldModel.objects.values_list(f\"data__{crafted_alias}\")\n+\n     def test_values_expression_group_by(self):\n         # values() applies annotate() first, so values selected are grouped by\n         # id, not firstname.",
+      "fail_to_pass": "[\"test_queryset_values.py::ValuesExpressionsTests::test_values_expression_alias_sql_injection_json_field\"",
+      "pass_to_pass": "[\"test_queryset_values.py::ValuesExpressionsTests::test_values_expression_group_by\"",
+      "expected_spans": {
+        "django/db/models/sql/query.py": [
+          "Query.set_values"
+        ]
+      },
+      "test_file_spans": {
+        "test_queryset_values.py": [
+          "imports",
+          "ValuesExpressionsTests.test_values_expression_alias_sql_injection_json_field"
+        ]
+      },
+      "resolved_by": [],
+      "alternative_spans": [],
+      "version": "3.0"
+    },
+    {
+      "instance_id": "cve-2021-31542",
+      "repo": "django/django",
+      "base_commit": "04ac1624bdc2fa",
+      "problem_statement": "The code suffers from a Path Traversal (CWE-22) vulnerability because it fails to sanitize or validate the `name` input for directory traversal sequences. By allowing `dir_name` to retain unsanitized path components (e.g., `../`), the code constructs paths that resolve outside the intended storage directory when generating new filenames. This enables attackers to write files to arbitrary locations on the filesystem, leading to unauthorized data access, modification, or system compromise. Proper input validation (e.g., normalizing the path to ensure it stays within a predefined base directory) is required to mitigate this vulnerability.",
+      "golden_patch": "diff --git a/django/core/files/storage.py b/django/core/files/storage.py\nindex 1562614e50d6..89faa626e6ec 100644\n--- a/django/core/files/storage.py\n+++ b/django/core/files/storage.py\n@@ -1,4 +1,5 @@\n import os\n+import pathlib\n from datetime import datetime\n from urllib.parse import urljoin\n \n@@ -6,6 +7,7 @@\n from django.core.exceptions import SuspiciousFileOperation\n from django.core.files import File, locks\n from django.core.files.move import file_move_safe\n+from django.core.files.utils import validate_file_name\n from django.core.signals import setting_changed\n from django.utils import timezone\n from django.utils._os import safe_join\n@@ -66,6 +68,9 @@ def get_available_name(self, name, max_length=None):\n         available for new content to be written to.\n         \"\"\"\n         dir_name, file_name = os.path.split(name)\n+        if '..' in pathlib.PurePath(dir_name).parts:\n+            raise SuspiciousFileOperation(\"Detected path traversal attempt in '%s'\" % dir_name)\n+        validate_file_name(file_name)\n         file_root, file_ext = os.path.splitext(file_name)\n         # If the filename already exists, add an underscore and a random 7\n         # character alphanumeric string (before the file extension, if one\n@@ -98,6 +103,8 @@ def generate_filename(self, filename):\n         \"\"\"\n         # `filename` may include a path as returned by FileField.upload_to.\n         dirname, filename = os.path.split(filename)\n+        if '..' in pathlib.PurePath(dirname).parts:\n+            raise SuspiciousFileOperation(\"Detected path traversal attempt in '%s'\" % dirname)\n         return os.path.normpath(os.path.join(dirname, self.get_valid_name(filename)))\n \n     def path(self, name):",
+      "test_patch":"diff --git a/tests/file_storage/test_generate_filename.py b/tests/file_storage/test_generate_filename.py\nindex b4222f412162..9f54f6921e2b 100644\n--- a/tests/file_storage/test_generate_filename.py\n+++ b/tests/file_storage/test_generate_filename.py\n@@ -1,7 +1,8 @@\n import os\n \n+from django.core.exceptions import SuspiciousFileOperation\n from django.core.files.base import ContentFile\n-from django.core.files.storage import Storage\n+from django.core.files.storage import FileSystemStorage, Storage\n from django.db.models import FileField\n from django.test import SimpleTestCase\n \n@@ -36,6 +37,44 @@ def generate_filename(self, filename):\n \n \n class GenerateFilenameStorageTests(SimpleTestCase):\n+    def test_storage_dangerous_paths(self):\n+        candidates = [\n+            ('/tmp/..', '..'),\n+            ('/tmp/.', '.'),\n+            ('', ''),\n+        ]\n+        s = FileSystemStorage()\n+        msg = \"Could not derive file name from '%s'\"\n+        for file_name, base_name in candidates:\n+            with self.subTest(file_name=file_name):\n+                with self.assertRaisesMessage(SuspiciousFileOperation, msg % base_name):\n+                    s.get_available_name(file_name)\n+                with self.assertRaisesMessage(SuspiciousFileOperation, msg % base_name):\n+                    s.generate_filename(file_name)\n+\n+    def test_storage_dangerous_paths_dir_name(self):\n+        file_name = '/tmp/../path'\n+        s = FileSystemStorage()\n+        msg = \"Detected path traversal attempt in '/tmp/..'\"\n+        with self.assertRaisesMessage(SuspiciousFileOperation, msg):\n+            s.get_available_name(file_name)\n+        with self.assertRaisesMessage(SuspiciousFileOperation, msg):\n+            s.generate_filename(file_name)\n+\n+    def test_filefield_dangerous_filename(self):\n+        candidates = ['..', '.', '', '???', '$.$.$']\n+        f = FileField(upload_to='some/folder/')\n+        msg = \"Could not derive file name from '%s'\"\n+        for file_name in candidates:\n+            with self.subTest(file_name=file_name):\n+                with self.assertRaisesMessage(SuspiciousFileOperation, msg % file_name):\n+                    f.generate_filename(None, file_name)\n+\n+    def test_filefield_dangerous_filename_dir(self):\n+        f = FileField(upload_to='some/folder/')\n+        msg = \"File name '/tmp/path' includes path elements\"\n+        with self.assertRaisesMessage(SuspiciousFileOperation, msg):\n+            f.generate_filename(None, '/tmp/path')\n \n     def test_filefield_generate_filename(self):\n         f = FileField(upload_to='some/folder/')",
+      "fail_to_pass": "[\"test_queryset_values.py::GenerateFilenameStorageTests::test_storage_dangerous_paths\",\"test_queryset_values.py::GenerateFilenameStorageTests::test_storage_dangerous_paths_dir_name\"]",
+      "pass_to_pass": "[\"test_queryset_values.py::GenerateFilenameStorageTests::test_filefield_generate_filename\"",
+      "expected_spans": {
+        "django/core/files/storage.py": [
+          "Storage.get_available_name"
+        ]
+      },
+      "test_file_spans": {
+        "test_generate_filename.py": [
+          "imports",
+          "GenerateFilenameStorageTests.test_storage_dangerous_paths"
+        ]
+      },
+      "resolved_by": [],
+      "alternative_spans": [],
+      "version": "3.0"
+    }
+]
+     

@@ -103,7 +103,8 @@ async def run_docker_evaluation(
             model_id=model_id,
             litellm_model_name=litellm_model_name,
             instance_ids=[instance_id],
-            dataset_name="instance_ids",
+            # dataset_name="instance_ids",
+            dataset_name="avr_bench",
         )
 
         # Start the job

@@ -312,9 +312,14 @@ class ResponseSchema(BaseModel):
     ) -> T:
         if not json_data:
             raise ValidationError("Message is empty")
-
+        
+        json_data = json_data.strip().removeprefix("```json").removesuffix("```").strip()
+        # if(not json_data.startswith('<')):
+        #     json_data = lambda json_data: (match.group(1).strip() if (match := re.search(r'```json\s*(.*?)\s*```', json_data, re.DOTALL)) else json_data.strip())
+        print(f"【DEBUG】validate_json:{json_data}")
         try:
             parsed_data = json.loads(json_data, strict=False)
+            
 
             def unescape_values(obj):
                 if isinstance(obj, dict):

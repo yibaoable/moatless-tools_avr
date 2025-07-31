@@ -26,6 +26,7 @@ from moatless.runner.runner import (
     JobDetailSection,
 )
 from moatless.telemetry import extract_trace_context
+from moatless.evaluation.utils import get_swebench_instance
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +40,7 @@ class DockerRunner(BaseRunner):
         timeout_seconds: int = 3600,
         moatless_source_dir: Optional[str] = None,
         default_image_name: Optional[str] = None,
-        update_on_start: bool = True,
+        update_on_start: bool = False,
         update_branch: str = "main",
         network_name: Optional[str] = None,
         memory_limit: Optional[str] = None,
@@ -199,6 +200,8 @@ class DockerRunner(BaseRunner):
                 # Get image name from the _get_image_name method (which may use default_image_name)
                 image_name_to_use = self._get_image_name(trajectory_id)
 
+            instance_tmp = get_swebench_instance(instance_id=trajectory_id)
+            repo_name = instance_tmp["repo"].split("/")[-1]
             # Prepare environment variables
             env_vars = [
                 f"PROJECT_ID={project_id}",
@@ -207,12 +210,13 @@ class DockerRunner(BaseRunner):
                 "MOATLESS_DIR=/data/moatless",
                 "MOATLESS_SOURCE_DIR=/opt/moatless/moatless",
                 "NLTK_DATA=/data/nltk_data",
-                "INDEX_STORE_DIR=/data/index_store",
-                "REPO_DIR=/testbed",
+                f"INDEX_STORE_DIR=/opt/moatless/moatless/index_store/avr-bench_{trajectory_id}", # 向量化仓库地址
+                f"REPO_DIR=/workspace/{repo_name}", # 代码仓库地址
                 "SKIP_CONDA_ACTIVATE=true",
-                "INSTANCE_PATH=/data/instance.json",
+                f"INSTANCE_PATH=/opt/moatless/moatless/instances/{trajectory_id}.json", # instance路径
                 "VIRTUAL_ENV=",  # Empty value tells UV to ignore virtual environments
                 "UV_NO_VENV=1",  # Tell UV explicitly not to use venv
+                f"REPO_PATH=/workspace/{repo_name}", # 代码仓库地址
                 # "HTTPBIN_URL=http://httpbin.moatless.ai/", # This is to use a more stable httpbin server in psf/request instances
             ]
 
@@ -280,6 +284,8 @@ class DockerRunner(BaseRunner):
             for env_var in env_vars:
                 cmd.extend(["-e", env_var])
 
+            cmd.extend(["--add-host", "host.docker.internal:1xx.x.x.x"])  # 为避免Docker容器无法连接到Redis服务而报错,ip是宿主机ip
+
             # Add volume mounts for data directory only if it exists
             if self.moatless_dir:
                 cmd.extend(["-v", f"{self.moatless_dir}:/data/moatless"])
@@ -295,7 +301,6 @@ class DockerRunner(BaseRunner):
                 cmd.extend(["-e", "PYTHONPATH=/opt/moatless/moatless:$PYTHONPATH"])
 
             args = create_job_args(project_id, trajectory_id, job_func, node_id)
-            logger.info(f"Running command: {args}")
 
             # Determine the command to run in the container
             run_command = ""
@@ -309,9 +314,12 @@ class DockerRunner(BaseRunner):
             )
             if should_update:
                 self.logger.info(f"Will run update-moatless.sh with branch {branch_to_use}")
-                run_command += f"/opt/moatless/docker/update-moatless.sh --branch {branch_to_use} && "
+                run_command += f"/opt/moatless/moatless/docker/update-moatless.sh --branch {branch_to_use} && "
 
             # Add the main job command
+            commit_hash = instance_tmp.get("base_commit", "latest")
+            run_command += f"cd /workspace/{repo_name} && git checkout {commit_hash} && " # 切换到指定的提交
+            run_command += f"pip install uv  && cd /opt/moatless/moatless && uv sync &&" # 构建moatless环境
             run_command += f"date '+%Y-%m-%d %H:%M:%S' && echo 'Starting job at ' $(date '+%Y-%m-%d %H:%M:%S') && uv run - <<EOF\n{args}\nEOF"
 
             cmd.extend([image_name_to_use, "sh", "-c", run_command])
@@ -671,10 +679,14 @@ class DockerRunner(BaseRunner):
             return self.default_image_name
 
         # Otherwise, use the standard image name generation logic
-        instance_id_split = trajectory_id.split("__")
-        repo_name = instance_id_split[0]
-        instance_id = instance_id_split[1]
-        return f"aorwall/sweb.eval.{self.architecture}.{repo_name}_moatless_{instance_id}"
+        # instance_id_split = trajectory_id.split("__")
+        # repo_name = instance_id_split[0]
+        # instance_id = instance_id_split[1]
+
+        image_name = f"ghcr.io/anonymous2578-data/{trajectory_id}"
+        return image_name
+
+        # return f"aorwall/sweb.eval.{self.architecture}.{repo_name}_moatless_{instance_id}"
 
     async def _container_exists(self, container_name: str) -> bool:
         """Check if a container exists.
@@ -752,7 +764,7 @@ class DockerRunner(BaseRunner):
                 return False
 
             # Remove the container
-            _, rm_return_code = await self._run_docker_command("docker", "rm", container_name)
+            _, rm_return_code = await self._run_docker_command("docker", "rm", "-f" ,container_name)
 
             if rm_return_code != 0:
                 self.logger.warning(f"Error removing container {container_name}")

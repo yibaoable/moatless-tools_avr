@@ -204,6 +204,7 @@ def create_repository(
             if not os.path.exists(local_repo_path):
                 # Clone from GitHub if local repo doesn't exist
                 try:
+                    print(f"Cloning {github_url} to {local_repo_path}")
                     retry_clone(github_url, local_repo_path)
                     logging.info(f"Cloned {github_url} to {local_repo_path}")
                 except Exception as e:
